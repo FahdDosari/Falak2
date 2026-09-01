@@ -1,6 +1,7 @@
 import streamlit as st
 import sqlite3
 import json
+import google.generativeai as genai
 
 st.set_page_config(
     page_title="البحث - المُلَقِّن اللغوي",
@@ -43,13 +44,29 @@ WORDS_LIST = ["جامعة", "وجود", "عضو", "ملك", "عامل", "جهة"
 @st.cache_data(ttl=86400)
 def fetch_dictionary_data(word):
     word_clean = word.strip()
+    
+    GEMINI_KEY = "AIzaSyBawsiGVw9vsYuNCJ34GxaPY4hRldrSef0"
+    try:
+        genai.configure(api_key=GEMINI_KEY)
+        model = genai.GenerativeModel('models/gemini-3.5-flash')
+        
+        prompt = f"اشرح معنى المفردة العربية ({word_clean}) بأسلوب معجمي دقيق وموجز جداً في جملة واحدة فقط، دون أي مقدمات أو تحيات."
+        response = model.generate_content(prompt)
+        
+        if response and response.text:
+            return response.text.strip()
+    except Exception:
+        pass
+
     fallback_dict = {
+        "ذهب": "مَعْدِنٌ ثَمِينٌ أَصْفَرُ اللَّوْنِ بَرَّاقٌ، أو فِعْلٌ بِمَعْنَى مَضَى وَانْصَرَفَ.",
+        "وزير": "الرَّجُلُ الَّذِي يُؤَازِرُ الحَاكِمَ ويَحْمِلُ عَنْهُ أَعْبَاءَ الدَّوْلَةِ.",
+        "عمر": "اسم علم مذكر عربي، مأخوذ من العُمْر وهو الحياة والبناء.",
         "جامعة": "مؤسسة للتعليم العالي تمنح الدرجات العلمية المختلفة وتضم كليات متعددة.",
-        "وجود": "حصول الشيء وثبوته في الواقع وتحققه.",
-        "عضو": "جزء من الكائن الحي، أو فرد من جماعة أو هيئة منظمة.",
-        "ملك": "صاحب السيادة والسلطة العليا على الدولة."
+        "وجود": "حصول الشيء وثبوته في الواقع وتحققه."
     }
-    return fallback_dict.get(word_clean, f"مفردة لغوية ({word_clean}) تُستخدم في السياقات الدلالية والنحوية.")
+    
+    return fallback_dict.get(word_clean, f"معنى وتفسير مفردة ({word_clean}).")
 
 def get_snippet(text, word, window=8):
     words = text.split()
@@ -118,7 +135,7 @@ if search_clicked or (query and query != st.session_state.last_query):
         st.session_state.last_query = query
         st.session_state.current_index = 0
         st.session_state.search_results = search_word_in_db(query)
-        st.session_state.show_video = False
+        st.session_state.show_video = True
         st.session_state.show_meaning = False
         st.session_state.show_ranking = False
 
@@ -137,7 +154,8 @@ if current_query.strip():
                     st.session_state.show_ranking = False
                     st.rerun()
             with ac2:
-                if st.button("السياق", use_container_width=True):
+                btn_type = "primary" if st.session_state.show_video else "secondary"
+                if st.button("السياق", use_container_width=True, type=btn_type):
                     st.session_state.show_video = not st.session_state.show_video
                     st.session_state.show_meaning = False
                     st.session_state.show_ranking = False
@@ -165,6 +183,21 @@ if current_query.strip():
                 st.markdown(f"<p style='font-size: 18px;'><b>ترتيب الكلمة ({current_query}) هو {rank} من {len(WORDS_LIST)} كلمة.</b></p>", unsafe_allow_html=True)
             if st.session_state.show_video:
                 curr_idx = st.session_state.current_index
+                total_results = len(results)
+
+                # أزرار التنقل وترتيب الفيديو فوق المشغل مباشرة
+                nav_c1, nav_c2, nav_c3 = st.columns([1, 2, 1])
+                with nav_c1:
+                    if st.button("▶️ التالي", use_container_width=True, disabled=(curr_idx >= total_results - 1)):
+                        st.session_state.current_index += 1
+                        st.rerun()
+                with nav_c2:
+                    st.markdown(f"<p style='text-align: center; font-size: 16px; font-weight: bold; margin-top: 5px;'>فيديو {curr_idx + 1} من {total_results}</p>", unsafe_allow_html=True)
+                with nav_c3:
+                    if st.button("◀️ السابق", use_container_width=True, disabled=(curr_idx == 0)):
+                        st.session_state.current_index -= 1
+                        st.rerun()
+
                 res = results[curr_idx]
                 st.video(f"https://www.youtube.com/watch?v={res['video_id']}&t={int(res['first_start'])}s", start_time=int(res['first_start']))
                 st.markdown(f"<p style='font-size: 19px;'>{res['snippet'].replace(current_query, f'<mark>{current_query}</mark>')}</p>", unsafe_allow_html=True)
